@@ -1,0 +1,356 @@
+DAM304 Generative Artificial Intelligence Practical 2
+PRACTICAL 2
+Tokenization Techniques and Positional Encoding
+Module DAM304 Generative Artificial
+Intelligence
+Module Tutor Dechen Tshomo
+Related Unit Unit III: Tokenization and Encoding
+1. Overview
+In this practical session, you will gain hands-on experience with one of the most fundamental
+concepts in large language model (LLM) engineering: tokenization. Before a transformer model
+can process any text, that text must be converted into a sequence of integer token IDs. The
+choice of tokenizer — and how it is implemented — directly affects the model's vocabulary size,
+sequence length, coverage of rare words, and ultimately its performance.
+You will also implement and visualise sinusoidal positional encoding, the mechanism used in the
+original transformer architecture to inject information about the order of tokens into the model.
+By the end of this practical, you will be able to:
+•
+•
+•
+•
+•
+Implement a character-level tokenizer from scratch with encode and decode methods
+Implement the Byte-Pair Encoding (BPE) algorithm on a small corpus
+Use the HuggingFace Transformers library to load and compare tokenizers for GPT-2 and
+LLaMA-3
+Implement and visualise sinusoidal positional encoding
+Analyse and reflect on the differences between tokenization strategies
+Pre-requisite Knowledge
+You should be comfortable with Python dictionaries, list comprehensions, and basic string
+operations.
+Review Unit III lecture slides on tokenization and positional encoding before this session.
+If you have not yet installed the required libraries, follow the setup instructions in Section 2.
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+2. Environment Setup
+All work for this practical must be done in a Python environment. You may use Jupyter
+Notebook, Google Colab, or a standard Python script. Run the following in your terminal or
+notebook to install the required libraries.
+2.1 Installing Libraries
+# Run this once in your terminal or in a Colab cell
+pip install transformers tokenizers datasets matplotlib numpy
+2.2 Importing Libraries
+At the top of your notebook or script, add the following imports. You will use these throughout
+all four tasks.
+import re
+import math
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from collections import Counter, defaultdict
+from transformers import AutoTokenizer
+3. Background
+3.1 Why Tokenization Matters
+Tokenization is the process of splitting raw text into discrete units called tokens, and mapping
+those tokens to integer IDs that the model can process. It sits at the very boundary between the
+raw world of text and the numerical world of neural networks.
+Three broad strategies exist, each with different trade-offs:
+Strategy Example Vocabulary Size OOV Handling
+Character-level "cat" →
+["c","a","t"]
+~256 No OOV
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+Word-level "playing" →
+["playing"]
+~100,000+ OOV problem
+Subword (BPE) "playing" →
+["play","ing"]
+30k–128k No OOV
+3.2 Byte-Pair Encoding (BPE) Algorithm
+BPE is the tokenization algorithm that powers GPT-2, GPT-3, LLaMA, and most modern LLMs.
+The algorithm works as follows:
+1. Start with a character-level vocabulary. Represent each word as a sequence of characters
+with a special end-of-word symbol (e.g., </w>).
+2. Count all adjacent symbol pairs across the corpus (e.g., ("l","o") appears many times in
+"low", "lower", "lowest").
+3. Merge the most frequent pair into a new single symbol: ("l","o") → "lo".
+4. Update the corpus representation with the new symbol and repeat from Step 2.
+5. Stop when the vocabulary reaches the desired size (e.g., 50,257 for GPT-2).
+At inference time, the trained merge rules are applied greedily to tokenize new text.
+3.3 Sinusoidal Positional Encoding
+The self-attention mechanism in a transformer is permutation-invariant — it does not inherently
+know the order of tokens. Positional encoding adds a unique positional signal to each token
+embedding before it enters the first layer.
+The original Vaswani et al. (2017) paper used fixed sine and cosine functions of different
+frequencies:
+PE(pos, 2i) = sin( pos / 10000^(2i / d_model) )
+PE(pos, 2i+1) = cos( pos / 10000^(2i / d_model) )
+Where pos is the position index of the token, i is the dimension index, and d_model is the total
+embedding dimension (e.g., 512).
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+4. Practical Tasks
+This practical contains four tasks. Tasks 1 and 2 require you to implement algorithms from
+scratch. Tasks 3 and 4 use existing libraries. Read each task carefully — the [PROVIDED]
+sections give you starter scaffolding, and the [YOUR TASK] sections are what you must
+complete.
+Scaffolding Convention
+[PROVIDED] — Code or context that is given to you. Do not modify this.
+[YOUR TASK] — Sections you must complete. Replace the pass statements and comments
+with your implementation.
+Do not change function signatures. Your code will be tested with these exact interfaces.
+Task 1 — Character-Level Tokenizer
+In this task you will build a character-level tokenizer entirely from scratch. This is the simplest
+possible tokenizer, and understanding it well makes it much easier to understand more complex
+subword tokenizers.
+Your tokenizer will maintain two mappings: a vocabulary that maps characters to integer IDs
+(char_to_id), and a reverse mapping that converts IDs back to characters (id_to_char). You will
+implement an encode method that converts a string into a list of integer IDs, and a decode
+method that reverses this process.
+Task 1: Character-Level Tokenizer
+[PROVIDED] — Starter Code / Context
+class CharTokenizer:
+"""
+A simple character-level tokenizer.
+Special tokens:
+[UNK] = 0 (unknown character)
+[PAD] = 1 (padding token)
+"""
+def
+init
+(self):
+__
+__
+self.char
+to
+id = {'[UNK]': 0,
+_
+_
+'[PAD]': 1}
+self.id
+to
+char = {0: '[UNK]'
+_
+_
+, 1: '[PAD]'}
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+def build
+vocab(self, text):
+_
+"""Build vocabulary from a string of text.
+"""
+# Assigns a unique integer ID to every unique
+# character found in text, starting from ID 2.
+...
+def encode(self, text):
+"""Convert a string to a list of integer token IDs.
+"""
+...
+def decode(self, ids):
+"""Convert a list of integer IDs back to a string.
+"""
+...
+[YOUR TASK]
+1. Implement build_vocab: iterate over each character in text, and for any character not
+already in char_to_id, assign it the next available integer ID (starting from 2). Also update
+id_to_char.
+2. Implement encode: return a list of integer IDs for each character in text. Use the [UNK] ID
+(0) for any character not in the vocabulary.
+3. Implement decode: return the concatenated string of characters corresponding to the given
+list of IDs. Use [UNK] for any unknown IDs.
+4. Test your tokenizer on the sentence: "The quick brown fox jumps over the lazy dog"
+5. Verify the round-trip: assert tokenizer.decode(tokenizer.encode(text)) == text
+6. Print: the vocabulary size, the token IDs for the test sentence, and the decoded string.
+Task 2 — Byte-Pair Encoding from Scratch
+This is the most algorithmically complex task in this practical. You will implement the core BPE
+training loop. Do not be discouraged if it takes time — work through it step by step, testing each
+function individually before combining them.
+You are given a small corpus of English words. Your implementation must correctly identify and
+merge the most frequent symbol pair at each step, building up a vocabulary iteratively from
+character-level to subword-level.
+Task 2: Byte-Pair Encoding Algorithm
+[PROVIDED] — Starter Code / Context
+# Starter corpus — list of (word, frequency) pairs
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+# </w> marks the end of a word (word boundary token)
+CORPUS = [
+('l o w </w>'
+, 5),
+('l o w e r </w>'
+, 2),
+('n e w e s t </w>'
+, 6),
+('w i d e s t </w>'
+, 3),
+]
+def get_pairs(vocab):
+"""
+Count all adjacent symbol pairs across the corpus.
+vocab: dict mapping word-string to frequency
+Returns: Counter of (symbol
+a, symbol
+b) -> count
+_
+_
+"""
+...
+def merge_vocab(best_pair, vocab):
+"""
+Merge all occurrences of best
+_
+pair in vocab.
+best
+pair: tuple (symbol
+a, symbol
+b)
+_
+_
+_
+vocab: dict mapping word-string to frequency
+Returns: new vocab dict with best
+_
+pair merged
+"""
+...
+[YOUR TASK]
+1. Implement get_pairs: for each word in vocab, split it into symbols, then iterate over
+adjacent pairs and accumulate their counts multiplied by the word frequency.
+2. Implement merge_vocab: use re.sub to replace all occurrences of 'symbol_a symbol_b'
+(with a word boundary) with 'symbol_a+symbol_b' (no space) in every word key. Return the
+updated vocab dict.
+3. Write a training loop that initialises vocab from CORPUS, then repeats the following
+NUM_MERGES=10 times:
+a. Call get_pairs to count all pairs
+b. Find the most frequent pair using max(pairs, key=pairs.get)
+c. Call merge_vocab to apply the merge
+d. Print the merge number, the pair merged, and the resulting vocabulary
+4. After training, write a tokenize(word, vocab) function that applies the learned merge rules
+to a new word and returns its token list.
+5. Test tokenize on the following words: 'lowest', 'newer', 'wider', 'newest'
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+Task 3 — HuggingFace Tokenizers: GPT-2 vs LLaMA-3
+Real-world LLMs use highly optimised tokenizer implementations. In this task, you will load the
+official tokenizers for two important models — GPT-2 and LLaMA-3 — using the HuggingFace
+Transformers library, and compare how they segment the same sentences.
+Task 3: Comparing Real-World LLM Tokenizers
+[PROVIDED] — Starter Code / Context
+from transformers import AutoTokenizer
+# Load the GPT-2 tokenizer (BPE, vocab size ~50,257)
+gpt2_tokenizer = AutoTokenizer.from_pretrained('gpt2')
+# Load the LLaMA-3 tokenizer (BPE/tiktoken, vocab size ~128,000)
+# Note: this is a gated model. If access is restricted,
+# use 'meta-llama/Llama-2-7b-hf' or 'mistralai/Mistral-7B-v0.1'
+llama_tokenizer = AutoTokenizer.from_pretrained(
+'meta-llama/Meta-Llama-3-8B'
+)
+TEST_SENTENCES = [
+'Tokenization is the foundation of all language models.
+'
+,
+'The Bhutanese government adopted a Gross National Happiness index.
+'
+,
+'antidisestablishmentarianism'
+,
+'GPT-4o achieved state-of-the-art performance on MMLU.
+'
+,
+'1 + 1 = 2, but 999 + 1 = 1000.
+'
+,
+]
+[YOUR TASK]
+1. For each sentence in TEST_SENTENCES, use both tokenizers to get the token strings (use
+tokenizer.tokenize(sentence)) and the integer IDs (use tokenizer.encode(sentence)).
+2. Print a comparison table for each sentence showing: the original sentence, GPT-2 tokens,
+GPT-2 token count, LLaMA-3 tokens, and LLaMA-3 token count.
+3. Verify the round-trip for both tokenizers: tokenizer.decode(tokenizer.encode(sentence))
+should equal the original sentence (modulo whitespace handling).
+4. Print the vocabulary sizes of both tokenizers (use tokenizer.vocab_size).
+5. Analysis questions (answer as comments in your code):
+a. Which tokenizer produces fewer tokens for the Bhutan sentence? Why might this be?
+b. How does each tokenizer handle the long word 'antidisestablishmentarianism'?
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+c. How are numbers (999, 1000) handled? Is each digit a separate token?
+d. What do the special characters like 'Ġ' (GPT-2) or '
+▁
+tokens represent?
+' (LLaMA) at the start of some
+Task 4 — Sinusoidal Positional Encoding Visualisation
+In this task you will implement the sinusoidal positional encoding from the original Attention Is
+All You Need paper (Vaswani et al., 2017) and produce a heatmap visualisation. This will help
+you develop an intuition for why different dimensions of the positional encoding capture
+different granularities of position.
+Task 4: Positional Encoding Implementation and Visualisation
+[PROVIDED] — Starter Code / Context
+import numpy as np
+import matplotlib.pyplot as plt
+def positional_encoding(max_seq_len, d_model):
+"""
+Compute the sinusoidal positional encoding matrix.
+Args:
+max
+seq
+len: number of positions (rows)
+_
+_
+d
+model: embedding dimension (columns)
+_
+Returns:
+PE: numpy array of shape (max
+seq
+_
+len, d
+_
+_
+model)
+"""
+PE = np.zeros((max
+seq
+len, d
+model))
+_
+_
+_
+# pos: shape (max
+seq
+len, 1)
+_
+_
+pos = np.arange(max
+seq
+len)[:, np.newaxis]
+_
+_
+# i: shape (1, d
+model // 2)
+_
+i = np.arange(0, d
+model, 2)[np.newaxis, :]
+_
+...
+[YOUR TASK]
+1. Inside positional_encoding, compute the division term: div_term = 10000 ** (i / d_model).
+Use numpy broadcasting — pos and i are already shaped for this.
+2. Fill in the even columns (PE[:, 0::2]) using np.sin(pos / div_term).
+3. Fill in the odd columns (PE[:, 1::2]) using np.cos(pos / div_term).
+4. Return PE.
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 2
+5. Call your function with max_seq_len=100, d_model=64 and store the result.
+6. Create a heatmap using matplotlib (plt.imshow with cmap='RdBu', aspect='auto') showing
+the full 100×64 matrix. Add axis labels: 'Embedding Dimension' (x) and 'Token Position' (y).
+Add a colour bar. Save as 'positional_encoding.png'.
+7. Create a second plot showing PE values across all 100 positions for four specific
+dimensions: d=0, d=1, d=10, d=63. Plot all four on the same figure with a legend. This shows
+how lower dimensions oscillate faster than higher ones.
+8. Answer in comments: Why does the model need positional encoding at all? What would
+happen if two sentences with the same words in different orders were fed to a transformer
+without it?
+College of Science and Technology, RUB
