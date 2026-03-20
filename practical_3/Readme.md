@@ -1,1 +1,0 @@
-# Hi! practical 3
