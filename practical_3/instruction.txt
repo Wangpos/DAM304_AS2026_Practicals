@@ -1,0 +1,681 @@
+DAM304 Generative Artificial Intelligence Practical 3
+COLLEGE OF SCIENCE AND TECHNOLOGY
+Royal University of Bhutan
+Department of Software Engineering
+DAM304 Generative Artificial Intelligence
+PRACTICAL 3
+Build and Understand the Core Attention Mechanism
+1. Overview
+In Practical 2 you built a tokenizer , the component that converts raw text into token IDs. In this
+practical, you go one layer deeper: you will implement the core attention mechanism that allows
+each token to communicate with every other token in the sequence.
+The attention mechanism is the defining innovation of the transformer architecture.
+Understanding it in detail not just how to call torch.nn.MultiheadAttention, but what actually
+happens inside is essential for anyone who wants to work seriously with large language models.
+You will build scaled dot-product attention from scratch using PyTorch and NumPy, then extend
+it to multi-head attention. Along the way you will develop intuitions about what attention scores
+mean, why the scaling factor is necessary, and what causal masking does. By the end, you will
+have a working single-layer transformer block.
+By the end of this practical, you will be able to:
+•
+•
+•
+•
+•
+•
+Implement scaled dot-product attention from scratch and interpret the resulting attention
+weight matrix
+Explain why the dot product is divided by the square root of d_k
+Apply a causal (look-ahead) mask to prevent the decoder from attending to future tokens
+Implement multi-head attention by splitting the embedding into h parallel heads
+Assemble a complete single-layer transformer block combining attention, layer
+normalisation, and a feed-forward network
+Verify your implementation by comparing its output shape and behaviour against
+PyTorch built-ins
+Pre-requisite Knowledge
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+You must be comfortable with matrix multiplication in NumPy and PyTorch (torch.matmul,
+@).
+Review Unit IV lecture slides on attention mechanisms before the session.
+You should understand what a softmax function does and why it is used here.
+Prior experience with torch.nn.Module is helpful but not required — the scaffolding is
+provided.
+2. Environment Setup
+2.1 Installing Libraries
+All tasks in this practical use PyTorch and NumPy.
+# Terminal / Colab cell
+pip install torch numpy matplotlib
+2.2 Imports
+Place the following at the top of your notebook or script. You will draw on all of these across the
+four tasks.
+import math
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+2.3 Reproducibility
+Set the random seed at the start of your notebook so your results are consistent between runs.
+This is important both for debugging and for your report.
+torch.manual
+seed(42)
+_
+np.random.seed(42)
+3. Background
+3.1 The Intuition Behind Attention
+When you read the sentence "The bank by the river was muddy", your brain does not give equal
+attention to every word when interpreting "bank". It attends more strongly to "river" and
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+"muddy" because those words help disambiguate the meaning. The attention mechanism gives a
+transformer the same ability.
+For each token in the sequence, the attention mechanism asks: how much should I attend to
+every other token when computing my updated representation? The answer is a set of attention
+weights one per other token that sum to 1.0 and are used to compute a weighted average of
+value vectors.
+3.2 Scaled Dot-Product Attention
+Formally, the attention function takes three matrices as inputs: Query (Q), Key (K), and Value
+(V). These are computed by multiplying the input X by three learned weight matrices W_Q,
+W_K, and W_V respectively. The output is computed as:
+Attention(Q, K, V) = softmax( Q * K^T / sqrt(d_k) ) * V
+Each matrix has the following dimensions:
+Matrix Shape Meaning
+Q (n, d_k) Query — what this token is looking
+for
+K (n, d_k) Key — what this token has to offer
+V (n, d_v) Value — the actual content to be
+aggregated
+Why divide by sqrt(d_k)? When d_k is large, the dot products grow large in magnitude, which
+pushes the softmax into regions where gradients are very small (the "saturation" zone). Dividing
+by sqrt(d_k) keeps the variance of the dot products approximately equal to 1, regardless of
+embedding size. This stabilises training significantly.
+3.3 Causal Masking
+During pre-training of a decoder-only model (like GPT or LLaMA), we use causal language
+modelling ,the model must predict the next token using only the tokens that came before it. To
+enforce this, we apply a causal mask: before the softmax, we set the attention scores for all future
+positions to negative infinity. After softmax, these become exactly 0.0, meaning the current
+token attends to no future token.
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+For a sequence of length 4, the causal mask looks like this:
+# 1 = allowed to attend, 0 = masked (set to -inf before softmax)
+mask = [[1, 0, 0, 0],
+[1, 1, 0, 0],
+[1, 1, 1, 0],
+[1, 1, 1, 1]]
+3.4 Multi-Head Attention
+Instead of running one attention function with full d_model dimensions, multi-head attention
+splits the embedding into h smaller chunks ("heads") and runs attention independently on each.
+The results are concatenated and projected back to d_model.
+The intuition is that different heads can learn to attend to different types of relationships
+simultaneously. For example, one head may learn syntactic subject-verb agreement while another
+learns semantic similarity. Using h heads with d_k = d_model / h maintains the same total
+compute cost as single-head attention.
+MultiHead(Q,K,V) = Concat(head_1, ..., head_h) * W_O
+where head_i = Attention( Q*W_Qi, K*W_Ki, V*W_Vi )
+4. Practical Tasks
+This practical has four tasks that build on each other. Complete them in order , each task
+produces a component that the next task uses. Read the [PROVIDED] scaffolding carefully
+before writing any code. The shapes and interfaces are fixed.
+Scaffolding Convention
+[PROVIDED] — Starter code and context. Do not modify function signatures.
+[YOUR TASK] — What you must implement. Replace the ... placeholders.
+Test each task before moving on. Print tensor shapes frequently — shape mismatches are the
+most common error.
+Task 1: Scaled Dot-Product Attention (NumPy)
+Before using PyTorch, you will implement the full attention computation using NumPy only.
+Working at this level forces you to reason carefully about the matrix dimensions involved. There
+is no automatic differentiation here , this is a forward-pass implementation only.
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+Task 1: Scaled Dot-Product Attention — NumPy
+[PROVIDED] Starter Code / Context
+import numpy as np
+def scaled
+dot
+_
+product
+attention
+np(Q, K, V, mask=None):
+_
+_
+_
+"""
+NumPy implementation of scaled dot-product attention.
+Args:
+Q : np.ndarray, shape (n, d
+_
+k)
+K : np.ndarray, shape (n, d
+_
+k)
+V : np.ndarray, shape (n, d
+_
+v)
+mask: np.ndarray or None, shape (n, n), boolean.
+True = keep, False = mask (set to -1e9)
+Returns:
+output : np.ndarray, shape (n, d
+_
+v)
+weights : np.ndarray, shape (n, n) <- attention probabilities
+"""
+d
+k = Q.shape[-1]
+_
+...
+# --- Test inputs ---
+np.random.seed(42)
+n, d
+k, d
+v = 4, 8, 8
+_
+_
+Q = np.random.randn(n, d
+_
+k)
+K = np.random.randn(n, d
+_
+k)
+V = np.random.randn(n, d
+_
+v)
+[YOUR TASK]
+1. Compute the raw attention scores: scores = Q @ K.T (result shape: (n, n))
+2. Scale the scores: divide by sqrt(d_k) using math.sqrt or np.sqrt.
+3. Apply the mask if provided: wherever mask is False, set the corresponding score to -1e9 (a
+large negative number that becomes ~0 after softmax).
+4. Apply softmax along axis=-1 (the last axis) to convert scores to probabilities. Implement
+softmax manually: subtract the row maximum before exponentiating for numerical stability.
+5. Compute the output: multiply the weight matrix by V . (result shape: (n, d_v))
+6. Return both the output and the weights.
+7. Call your function on the test inputs with no mask. Print: the attention weight matrix (4×4)
+and the output shape.
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+8. Verify: each row of the weight matrix should sum to 1.0. Use
+np.allclose(weights.sum(axis=-1), np.ones(n)).
+9. Create a causal mask for n=4 (lower triangular, True below and on diagonal, False above).
+Call your function again with the mask and print the new weight matrix. Verify that all
+entries above the diagonal are 0.0.
+Guidance and Common Mistakes
+•
+•
+•
+•
+The softmax must be applied row-wise (each row sums to 1). Using axis=-1 is correct for
+2D arrays.
+Numerical stability trick: subtract the row maximum before exp(). Without this, you may
+get NaN when scores are very large. The formula is: softmax(x) = exp(x - max(x)) /
+sum(exp(x - max(x))).
+The causal mask should be created with np.tril(np.ones((n,n)), k=0).astype(bool) — this
+gives True on and below the diagonal.
+If your masked weight matrix has any non-zero values above the diagonal, your masking
+is wrong. Check that you are setting masked positions to -1e9 before softmax, not after.
+Task 2 : Scaled Dot-Product Attention (PyTorch)
+Now you will re-implement the same attention function using PyTorch. This version adds the
+learned weight matrices W_Q, W_K, W_V and a dropout layer making it a production-ready
+implementation. Because PyTorch tracks gradients automatically, this version can be trained
+end-to-end.
+Task 2: Scaled Dot-Product Attention — PyTorch nn.Module
+[PROVIDED] Starter Code / Context
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+class ScaledDotProductAttention(nn.Module):
+"""
+Learnable scaled dot-product attention with optional causal mask.
+Args:
+d
+model : int — full embedding dimension
+_
+d
+k : int — query/key projection dimension
+_
+d
+v : int — value projection dimension
+_
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+dropout : float — dropout probability (default 0.0)
+"""
+def
+init
+(self, d
+model, d
+k, d
+v, dropout=0.0):
+__
+__
+_
+_
+_
+super().
+init
+()
+__
+__
+self.d
+k = d
+k
+_
+_
+self.W
+Q = nn.Linear(d
+model, d
+_
+_
+_
+k, bias=False)
+self.W
+K = nn.Linear(d
+model, d
+k, bias=False)
+_
+_
+_
+self.W
+V = nn.Linear(d
+model, d
+v, bias=False)
+_
+_
+_
+self.dropout = nn.Dropout(dropout)
+def forward(self, x, causal=False):
+"""
+Args:
+x : Tensor, shape (B, n, d
+_
+model)
+causal : bool — if True, apply causal mask
+Returns:
+output : Tensor, shape (B, n, d
+_
+v)
+weights : Tensor, shape (B, n, n)
+"""
+B, n,
+= x.shape
+_
+...
+# --- Test ---
+torch.manual
+seed(42)
+_
+B, n, d
+model = 2, 6, 64
+_
+d
+k = d
+v = 64
+_
+_
+x = torch.randn(B, n, d
+model)
+_
+attn = ScaledDotProductAttention(d
+model, d
+k, d
+_
+_
+_
+v)
+[YOUR TASK]
+1. Project x through W_Q, W_K, W_V to get Q, K, V — each of shape (B, n, d_k or d_v).
+2. Compute raw scores: use torch.matmul(Q, K.transpose(-2, -1)) — result shape (B, n, n).
+3. Scale by 1 / sqrt(d_k). Use math.sqrt(self.d_k).
+4. If causal=True, create a causal mask: use torch.tril(torch.ones(n, n,
+device=x.device)).bool(). Apply it by calling scores.masked_fill(~mask, float('-inf')).
+5. Apply softmax along dim=-1 using F.softmax.
+6. Apply self.dropout to the attention weights.
+7. Compute output = weights @ V , shape (B, n, d_v).
+8. Return output and weights.
+9. Test with causal=False: call attn(x) and print output.shape and weights.shape.
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+10. Test with causal=True: print the weights[0] matrix (first example in batch). Verify all
+values above the diagonal are 0 or NaN (NaN means -inf row, which means position 0
+attends only to itself).
+Guidance and Common Mistakes
+•
+•
+•
+•
+•
+The input x has a batch dimension B. All your operations must be batched — shapes are
+(B, n, d_k), not (n, d_k).
+K.transpose(-2, -1) transposes the last two dimensions, which is correct for batched
+matrix multiply. K.T would fail on a 3D tensor.
+Use float('-inf') for masking, not -1e9. PyTorch's softmax handles -inf correctly (output
+becomes exactly 0.0), whereas -1e9 can sometimes leave a tiny numerical residual.
+After softmax, weights should still be (B, n, n). If you get shape errors, print intermediate
+shapes at each step.
+For the causal mask, note that position 0 has an all-masked row except for itself, so
+weights[0, 0, :] should be [1, 0, 0, 0, 0, 0].
+Task 3: Multi-Head Attention
+Now you will implement multi-head attention. Rather than running one attention computation
+with the full d_model dimensions, you will split the embedding into h equal-sized heads, run
+attention independently on each, and concatenate the results before a final linear projection
+W_O.
+This is the exact architecture used in every modern transformer, including BERT, GPT-2,
+LLaMA, and the model you will build in Task 4.
+Task 3: Multi-Head Attention
+[PROVIDED] Starter Code / Context
+class MultiHeadAttention(nn.Module):
+"""
+Multi-head attention as described in Vaswani et al. (2017).
+Args:
+d
+model : int — full embedding dimension (e.g. 512)
+_
+num
+heads : int — number of attention heads (e.g. 8)
+_
+dropout : float — dropout probability
+Constraint: d
+model must be divisible by num
+_
+_
+heads.
+"""
+def
+init
+__
+(self, d
+__
+model, num
+_
+_
+heads, dropout=0.0):
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+super().
+init
+()
+__
+__
+assert d
+model % num
+heads == 0,
+_
+_
+'d
+model must be divisible by
+_
+num
+heads'
+_
+self.num
+heads = num
+heads
+_
+_
+self.d
+k = d
+model // num
+heads
+_
+_
+_
+# Four linear layers: one each for Q, K, V, and the output
+projection
+self.W
+Q = nn.Linear(d
+model, d
+model, bias=False)
+_
+_
+_
+self.W
+K = nn.Linear(d
+model, d
+model, bias=False)
+_
+_
+_
+self.W
+V = nn.Linear(d
+model, d
+model, bias=False)
+_
+_
+_
+self.W
+O = nn.Linear(d
+model, d
+model, bias=False)
+_
+_
+_
+self.dropout = nn.Dropout(dropout)
+def split
+heads(self, x, B, n):
+_
+"""
+Reshape (B, n, d
+model) -> (B, num
+heads, n, d
+k)
+_
+_
+_
+so each head attends to its own d
+k-dimensional slice.
+_
+"""
+...
+def forward(self, x, causal=False):
+B, n, d
+model = x.shape
+_
+...
+# --- Test ---
+torch.manual
+seed(42)
+_
+B, n, d
+model, h = 2, 10, 512, 8
+_
+x = torch.randn(B, n, d
+model)
+_
+mha = MultiHeadAttention(d
+model, num
+_
+_
+heads=h)
+[YOUR TASK]
+1. Implement split_heads: use x.view(B, n, self.num_heads, self.d_k).transpose(1, 2) to get
+shape (B, num_heads, n, d_k).
+2. In forward, project Q, K, V through W_Q, W_K, W_V — each gives shape (B, n,
+d_model).
+3. Call split_heads on Q, K, V to get shape (B, h, n, d_k).
+4. Compute attention scores: (B, h, n, d_k) @ (B, h, d_k, n) = (B, h, n, n). Scale by
+1/sqrt(d_k).
+5. If causal=True, apply a causal mask. The mask must be broadcastable to (B, h, n, n) —
+create it with shape (1, 1, n, n).
+6. Apply softmax along dim=-1 and dropout.
+7. Compute context: weights @ V , shape (B, h, n, d_k).
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+8. Concatenate heads: transpose back to (B, n, h, d_k), then use .contiguous().view(B, n,
+d_model).
+9. Apply W_O projection — output shape is (B, n, d_model).
+10. Test: call mha(x, causal=False) and mha(x, causal=True). Print output shape (expect (2,
+10, 512)) and assert it matches d_model.
+11. Print the number of trainable parameters: sum(p.numel() for p in mha.parameters()).
+Guidance and Common Mistakes
+•
+The reshape in split_heads is the trickiest part. After .transpose(1, 2), the tensor is (B, h,
+n, d_k). Make sure you call .contiguous() before .view() when merging heads back —
+without it you may get a RuntimeError.
+•
+The causal mask shape must broadcast correctly. Using shape (1, 1, n, n) allows it to
+broadcast across both the batch and head dimensions.
+•
+When you compute weights @ V , both are (B, h, n, d_k) shape — the matmul treats the
+last two dims as the matrix dimensions, which is correct.
+•
+Count your parameters: for d_model=512, h=8, you have four matrices of size 512×512 =
+4 × 262,144 = 1,048,576 parameters. If your count is different, you have a shape bug.
+Task 4: Transformer Block and Attention Visualisation
+In this final task you will assemble a complete transformer block — one full layer of a modern
+LLM — by combining your multi-head attention module with layer normalisation and a
+position-wise feed-forward network. You will then run a forward pass and visualise the attention
+patterns.
+Task 4: Transformer Block and Attention Visualisation
+[PROVIDED] Starter Code / Context
+class FeedForward(nn.Module):
+"""Position-wise feed-forward network: FFN(x) = GELU(xW1 + b1)W2 + b2"""
+def
+__
+init
+__
+(self, d
+_
+model, d
+_
+ff):
+super().
+__
+init
+__
+()
+self.fc1 = nn.Linear(d
+_
+model, d
+_
+ff)
+self.fc2 = nn.Linear(d
+_
+ff, d
+_
+model)
+self.act = nn.GELU()
+def forward(self, x):
+return self.fc2(self.act(self.fc1(x)))
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+class TransformerBlock(nn.Module):
+"""
+One transformer layer (Pre-LN variant):
+x -> LayerNorm -> MultiHeadAttention -> residual -> LayerNorm -> FFN
+-> residual
+Args:
+d
+model : int
+_
+num
+heads : int
+_
+d
+ff : int — inner dimension of FFN (typically 4 * d
+_
+_
+model)
+dropout : float
+"""
+def
+init
+(self, d
+__
+__
+model, num
+heads, d
+ff, dropout=0.1):
+_
+_
+_
+super().
+init
+()
+__
+__
+self.norm1 = nn.LayerNorm(d
+_
+model)
+self.norm2 = nn.LayerNorm(d
+_
+model)
+self.attn = MultiHeadAttention(d
+model, num
+_
+_
+heads, dropout)
+self.ff = FeedForward(d
+model, d
+_
+_
+ff)
+self.drop = nn.Dropout(dropout)
+def forward(self, x, causal=False):
+# The TransformerBlock must also return attention weights for
+visualisation.
+# You will need to modify MultiHeadAttention.forward to return
+weights too.
+...
+[YOUR TASK]
+1. Implement TransformerBlock.forward using Pre-LN (normalise before the sublayer, not
+after):
+a. Compute attn_out, weights = self.attn(self.norm1(x), causal=causal)
+b. Apply residual connection: x = x + self.drop(attn_out)
+c. Apply FFN sublayer: x = x + self.drop(self.ff(self.norm2(x)))
+d. Return x and weights.
+2. Test: create a TransformerBlock(d_model=256, num_heads=8, d_ff=1024) and run a
+forward pass with x of shape (1, 8, 256) and causal=True. Print the output shape.
+3. Attention Visualisation: using the token sequence below, tokenize it, create random
+embeddings, run a forward pass, and visualise the attention heatmap.
+Sentence: 'the cat sat on the mat near the door'
+Steps:
+College of Science and Technology, RUB
+DAM304 Generative Artificial Intelligence Practical 3
+a. Create a list of 9 tokens (split on whitespace).
+b. Create a random embedding tensor: x = torch.randn(1, 9, 256).
+c. Run a forward pass through your TransformerBlock with causal=True.
+d. Extract weights for head 0: w = weights[0, 0].detach().numpy() (shape 9x9).
+e. Plot a heatmap using plt.imshow(w, cmap='Blues', vmin=0, vmax=1).
+f. Set x-tick and y-tick labels to the token list. Add a colorbar and title.
+g. Save the figure as 'attention_heatmap.png'.
+4. Analysis: in code comments, answer the following:
+a. In the causal heatmap, which cells should always be zero? Why?
+b. What does it mean if token 'cat' has a high attention weight towards 'mat'?
+c. Why do we use residual (skip) connections around both the attention and FFN sublayers?
+Guidance and Common Mistakes
+•
+Pre-LN applies LayerNorm to the input x before the sublayer, not to the output. This is
+the variant used in LLaMA, GPT-2, and most modern transformers because it is more
+stable to train.
+•
+The residual connection adds the original x to the sublayer output. This must happen after
+dropout: x = x + self.drop(attn_out). Do not apply dropout to x before the residual.
+•
+To visualise attention for a specific head, index the weights tensor as weights[batch_idx,
+head_idx]. For example, weights[0, 0] gives the 9×9 attention matrix for the first head of
+the first example.
+•
+In the causal heatmap, the upper triangle (above the diagonal) should be completely dark
+(zero weight). If it is not, your masking is not working correctly — go back and debug
+Task 3.
+•
+The attention weights are probabilities (row sums = 1.0), so use vmin=0, vmax=1 for the
+colour scale to make the heatmap interpretable.
+5. Expected Output Summary
+Use this table as a checklist before submitting. All five items must appear clearly in your
+notebook or script output.
+College of Science and Technology, RUB
+# Check Expected value / behaviour
+1 Task 1 weight matrix row sums All rows sum to 1.0 (no mask). Upper triangle all 0.0
+(causal mask).
+2 Task 2 output shape (2, 6, 64) — batch=2, seq=6, d_v=64.
+DAM304 Generative Artificial Intelligence Practical 3
+College of Science and Technology, RUB
+3 Task 3 output shape (2, 10, 512) — same as input. Parameter count:
+~1,048,576.
+4 Task 4 block output shape (1, 8, 256) — same as input. Residual connections
+preserve shape.
+5 attention_heatmap.png 9×9 heatmap. Upper triangle is visually dark. Axis
+labels show token words.
