@@ -1,0 +1,373 @@
+DAM304 Generative Artificial Intelligence Practical 4
+COLLEGE OF SCIENCE AND TECHNOLOGY
+Royal University of Bhutan
+Department of Software Engineering
+PRACTICAL 4
+Construct a Small-Scale Language Model
+Unit IV: LLM Architectures and Implementation
+1. Overview
+In Practical 3 you implemented the core attention mechanism. In this practical you will assemble
+all the pieces into a complete, trainable language model: token embeddings, positional encoding,
+stacked transformer blocks, and a language model head. You will then train it on a small text
+corpus and generate text from it.
+Building a language model from scratch, even a small one gives you a concrete understanding
+of every design decision in models like GPT-2 and LLaMA. By the end of this session you will
+have a working mini-LM that you have trained yourself.
+By the end of this practical, you will be able to:
+•
+Implement a token embedding layer and combine it with sinusoidal positional encoding
+•
+Stack multiple transformer blocks into a full language model
+•
+Implement a causal language modelling training loop with cross-entropy loss
+•
+Generate text autoregressively from a trained model using greedy decoding
+•
+Measure training progress by plotting the loss curve
+2. Environment Setup
+2.1 Libraries
+pip install torch numpy matplotlib
+2.2 Imports
+import math, time
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+import matplotlib.pyplot as plt
+torch.manual
+seed(42)
+_
+College of Science and Technology
+DAM304 Generative Artificial Intelligence Practical 4
+3. Background
+3.1 From Transformer Block to Language Model
+A full autoregressive language model wraps the transformer stack in three stages:
+1. Input Embedding: Convert integer token IDs into dense vectors of size d_model, then add
+positional encoding to inject sequence-order information.
+2. Transformer Stack: Pass the embeddings through N identical transformer blocks (each
+containing multi-head attention, layer normalisation, and a feed-forward network).
+3. Language Model Head: Apply a final layer normalisation then project each output vector
+from d_model to vocab_size using a linear layer. The resulting logits are passed through a
+softmax to produce a probability distribution over the vocabulary.
+During training, the model is given the input sequence x[0:T] and trained to predict the next
+token at every position using cross-entropy loss. This is Causal Language Modelling (CLM).
+3.2 Cross-Entropy Loss for Next-Token Prediction
+For a vocabulary of size V and a sequence of length T, the model produces a logits matrix of
+shape (T, V). The loss at each position t is:
+L = -log P(x[t+1] | x[0], x[1], ..., x[t])
+PyTorch's nn.CrossEntropyLoss takes raw logits (not softmax outputs) and the target token ID.
+The loss is averaged over all positions in the batch.
+3.3 Autoregressive Text Generation
+At inference time, the model generates text one token at a time. Given a prompt, the model
+outputs a logit vector for the next position. We take the argmax (greedy decoding) or sample
+from the distribution to select the next token, then append it to the sequence and repeat.
+4. Practical Tasks
+Complete the four tasks in order. Each task builds directly on the previous one.
+Scaffolding Convention
+College of Science and Technology
+DAM304 Generative Artificial Intelligence Practical 4
+[PROVIDED] — Starter code. Do not modify function signatures.
+[YOUR TASK] — Implement the ... sections. Print tensor shapes at each step to verify
+dimensions.
+Task 1 Mini Language Model Architecture
+You will assemble the full model class. The MultiHeadAttention and TransformerBlock classes
+from Practical 3 are assumed to be defined above (copy them in before starting).
+Task 1: Mini Language Model Architecture
+[PROVIDED] — Starter Code / Context
+class MiniLM(nn.Module):
+"""
+A small autoregressive language model.
+Args:
+vocab
+size : int — number of unique tokens
+_
+d
+model : int — embedding dimension
+_
+num
+heads : int — attention heads per block
+_
+num
+layers : int — number of transformer blocks
+_
+d
+ff : int — FFN inner dimension
+_
+max
+seq
+len: int — maximum sequence length for PE
+_
+_
+dropout : float
+"""
+def
+init
+__
+__
+(self, vocab
+size, d
+model, num
+_
+_
+_
+heads,
+num
+layers, d
+ff, max
+seq
+len, dropout=0.1):
+_
+_
+_
+_
+super().
+init
+()
+__
+__
+self.token
+emb = nn.Embedding(vocab
+size, d
+model)
+_
+_
+_
+self.pos
+enc =
+_
+... # sinusoidal PE, shape (1, max
+seq
+_
+_
+len,
+d
+model)
+_
+self.blocks = nn.ModuleList([
+TransformerBlock(d
+model, num
+heads, d
+_
+_
+_
+ff, dropout)
+for
+_
+in range(num
+layers)
+_
+])
+self.norm = nn.LayerNorm(d
+_
+model)
+self.lm
+head = nn.Linear(d
+model, vocab
+size, bias=False)
+_
+_
+_
+self.dropout = nn.Dropout(dropout)
+def forward(self, x): # x: (B, T) token IDs
+B, T = x.shape
+...
+College of Science and Technology
+DAM304 Generative Artificial Intelligence Practical 4
+@torch.no
+grad()
+_
+def generate(self, prompt
+ids, max
+new
+tokens=50, temperature=1.0):
+_
+_
+_
+"""Autoregressive generation given a list of starting token IDs.
+"""
+...
+[YOUR TASK]
+1. In __init__, build the sinusoidal positional encoding matrix. Use the formula from
+Practical 2 (Task 4): PE[:, 0::2] = sin, PE[:, 1::2] = cos. Register it as a non-trainable buffer:
+self.register_buffer('pos_enc', PE.unsqueeze(0)).
+2. In forward:
+a. Embed tokens: emb = self.token_emb(x) --> shape (B, T, d_model)
+b. Add positional encoding: emb = emb + self.pos_enc[:, :T, :]
+c. Apply dropout to the embedding.
+d. Pass through each TransformerBlock in self.blocks with causal=True.
+e. Apply self.norm, then self.lm_head to get logits of shape (B, T, vocab_size).
+f. Return the logits.
+3. In generate:
+a. Start with ids = torch.tensor(prompt_ids).unsqueeze(0) --> shape (1, T).
+b. Loop max_new_tokens times:
+- Run forward pass on the current ids sequence.
+- Take logits at the last position: logits[:, -1, :] / temperature.
+- Apply softmax then torch.multinomial(probs, 1) to sample the next token.
+- Append the new token ID to ids using torch.cat.
+c. Return ids.squeeze(0).tolist().
+4. Test: create MiniLM(vocab_size=100, d_model=128, num_heads=4, num_layers=2,
+d_ff=256, max_seq_len=64). Run a forward pass with random input shape (2, 32). Print
+logits shape (expect (2, 32, 100)).
+Guidance and Common Mistakes
+•
+Positional encoding must be registered as a buffer (not a parameter) so it moves to the
+correct device with .to(device) but is not updated by the optimiser.
+•
+In generate, slice the input to the last max_seq_len tokens before each forward pass to
+avoid exceeding the model's context window: ids = ids[:, -max_seq_len:].
+•
+Use temperature scaling to control randomness: divide logits by temperature before
+softmax. temperature=1.0 is unchanged; temperature<1.0 makes output more
+deterministic.
+College of Science and Technology
+DAM304 Generative Artificial Intelligence Practical 4
+Task 2 Character-Level Dataset
+You will prepare a tiny training corpus using character-level tokenization. This is the same
+strategy used in Andrej Karpathy's nanoGPT tutorial and gives you a complete self-contained
+example with no external dependencies.
+Task 2: Character-Level Dataset and DataLoader
+[PROVIDED] Starter Code / Context
+# Tiny training corpus — you may replace this with any short text
+TEXT = """
+To be or not to be that is the question.
+Whether tis nobler in the mind to suffer.
+The slings and arrows of outrageous fortune.
+Or to take arms against a sea of troubles.
+"""
+class CharDataset(Dataset):
+def
+init
+(self, text, seq
+len):
+__
+__
+_
+self.seq
+len = seq
+len
+_
+_
+chars = sorted(set(text))
+self.vocab = {c: i for i, c in enumerate(chars)}
+self.inv
+vocab = {i: c for c, i in self.vocab.items()}
+_
+self.data = torch.tensor([self.vocab[c] for c in text],
+dtype=torch.long)
+def
+len
+__
+__
+(self):
+return len(self.data) - self.seq
+_
+len
+def
+getitem
+(self, idx):
+__
+__
+x = self.data[idx : idx + self.seq
+_
+len]
+y = self.data[idx + 1 : idx + self.seq
+_
+len + 1]
+return x, y
+[YOUR TASK]
+1. Create a CharDataset with seq_len=32 and verify its length and vocab size.
+2. Create a DataLoader with batch_size=16 and shuffle=True.
+3. Fetch one batch and print the shapes of x and y (both should be (16, 32)).
+4. Print the vocabulary (all unique characters and their IDs).
+College of Science and Technology
+DAM304 Generative Artificial Intelligence Practical 4
+5. Decode the first training example: print the input string and the target string side by side to
+verify the x/y offset is correct (y should be x shifted one position to the right).
+Task 3 Training Loop
+You will now write the training loop that optimises the model using cross-entropy loss and the
+AdamW optimiser. Even training for a small number of steps on this tiny corpus should show a
+clear decrease in loss.
+Task 3: Training Loop
+[PROVIDED] Starter Code / Context
+def train(model, dataloader, num
+_
+epochs, lr=3e-4, device='cpu'):
+model = model.to(device)
+optimiser = torch.optim.AdamW(model.parameters(), lr=lr,
+weight
+_
+decay=0.01)
+criterion = nn.CrossEntropyLoss()
+losses = []
+for epoch in range(num
+_
+epochs):
+model.train()
+epoch
+_
+loss = 0.0
+for x, y in dataloader:
+x, y = x.to(device), y.to(device)
+...
+avg
+_
+loss = epoch
+_
+loss / len(dataloader)
+losses.append(avg
+_
+loss)
+if (epoch + 1) % 10 == 0:
+print(f'Epoch {epoch+1}/{num
+_
+epochs} Loss: {avg
+_
+loss:.4f}')
+return losses
+[YOUR TASK]
+1. Inside the training loop, complete the forward + backward pass:
+a. Zero gradients: optimiser.zero_grad().
+b. Forward pass: logits = model(x) --> shape (B, T, vocab_size).
+c. Reshape for loss: logits.view(-1, vocab_size) and y.view(-1) to make shapes (B*T,
+vocab_size) and (B*T,).
+d. Compute loss: criterion(logits_flat, y_flat).
+e. Backprop and step: loss.backward(), optimiser.step().
+f. Accumulate: epoch_loss += loss.item().
+2. Call train with num_epochs=100, then plot the returned losses list using matplotlib. Label
+the axes 'Epoch' and 'Cross-Entropy Loss'. Save as 'training_loss.png'.
+College of Science and Technology
+DAM304 Generative Artificial Intelligence Practical 4
+3. Verify that the final loss is lower than the initial loss. If not, check your learning rate and
+batch size.
+Task 4 Text Generation and Analysis
+Task 4: Text Generation and Analysis
+[PROVIDED] Starter Code / Context
+# After training, use model.generate() to produce text
+# Encode a prompt, generate, then decode back to string
+def encode(text, vocab): return [vocab[c] for c in text if c in vocab]
+def decode(ids, inv
+ids)
+vocab): return ''
+_
+.join(inv
+vocab.get(i,
+_
+'?') for i in
+[YOUR TASK]
+1. Encode the prompt 'To be' and generate 100 new tokens using model.generate(prompt_ids,
+max_new_tokens=100, temperature=1.0).
+2. Decode the full output and print it.
+3. Repeat generation three times with the same prompt and print all three outputs. Are they
+identical? Why or why not?
+4. Experiment with temperature: generate once with temperature=0.5 and once with
+temperature=2.0. Print both outputs and comment on the difference in coherence and
+diversity.
+5. Analysis questions (answer as comments):
+a. What does the loss value at the end of training tell you about how well the model fits the
+training data?
+b. Why does a character-level model on a 4-sentence corpus not produce grammatically
+correct text?
+c. What would you need to change to make the model produce better text? (at least three
+concrete suggestions)
+College of Science and Technology
